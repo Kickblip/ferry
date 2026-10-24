@@ -1,8 +1,17 @@
-import { integer, pgTable, varchar } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, integer } from "drizzle-orm/pg-core"
 
-export const usersTable = pgTable("users", {
-  id: integer().primaryKey().generatedAlwaysAsIdentity(),
-  name: varchar({ length: 255 }).notNull(),
-  age: integer().notNull(),
-  email: varchar({ length: 255 }).notNull().unique(),
+export const apps = pgTable("apps", {
+  id: uuid().defaultRandom().primaryKey(),
+  ownerId: text().notNull(),
+  name: text().notNull(),
+  createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+})
+
+export const products = pgTable("products", {
+  id: uuid().defaultRandom().primaryKey(),
+  appId: uuid()
+    .notNull()
+    .references(() => apps.id, { onDelete: "restrict" }),
+  name: text().notNull(),
+  price: integer().notNull(),
 })

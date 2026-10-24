@@ -1,4 +1,4 @@
-import { AppSidebar } from "@/components/app-sidebar"
+import { NavSidebar } from "@/components/nav-sidebar"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -13,15 +13,22 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
+import { auth } from "@clerk/nextjs/server"
+import { eq } from "drizzle-orm"
+import { db } from "@/lib/db"
+import { apps } from "@/lib/schema"
 
-export default function PageLayout({
+export default async function PageLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const { userId } = await auth.protect()
+  const userApps = await db.select().from(apps).where(eq(apps.ownerId, userId))
+
   return (
     <SidebarProvider>
-      <AppSidebar />
+      <NavSidebar apps={userApps} />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
           <div className="flex items-center gap-2 px-4">
