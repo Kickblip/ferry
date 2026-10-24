@@ -7,6 +7,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -16,7 +17,7 @@ import {
 import { UserButton } from "@clerk/nextjs"
 import type { apps as appsTable } from "@/lib/schema"
 import Link from "next/link"
-import { HouseHeart, ShoppingBag } from "lucide-react"
+import { HouseHeart, Key, ShoppingBag } from "lucide-react"
 import { useParams } from "next/navigation"
 
 export function NavSidebar({
@@ -50,6 +51,16 @@ export function NavSidebar({
                   <Link href={`/dashboard/${appId}/products`}>
                     <ShoppingBag />
                     <span>Products</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarGroupLabel>Settings</SidebarGroupLabel>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="API Keys">
+                  <Link href={`/dashboard/${appId}/keys`}>
+                    <Key />
+                    <span>API Keys</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

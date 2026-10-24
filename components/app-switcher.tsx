@@ -142,7 +142,7 @@ export function CreateAppForm({ onCreated }: { onCreated: () => void }) {
       const response = await fetch("/api/apps", {
         method: "POST",
         body: JSON.stringify({
-          name: formData.get("app-name"),
+          name: formData.get("name"),
         }),
       })
 
@@ -175,8 +175,8 @@ export function CreateAppForm({ onCreated }: { onCreated: () => void }) {
 
         <FieldGroup>
           <Field>
-            <Label htmlFor="app-name">Name</Label>
-            <Input id="app-name" name="app-name" placeholder="Acme Inc" />
+            <Label htmlFor="name">Name</Label>
+            <Input id="name" name="name" placeholder="Acme Inc" />
           </Field>
         </FieldGroup>
 

@@ -71,8 +71,8 @@ export function CreateNewProductForm() {
 
       <FieldGroup>
         <Field>
-          <Label htmlFor="product-name">Name</Label>
-          <Input id="product-name" name="name" placeholder="100 Gems" />
+          <Label htmlFor="name">Name</Label>
+          <Input id="name" name="name" placeholder="100 Gems" />
         </Field>
       </FieldGroup>
 

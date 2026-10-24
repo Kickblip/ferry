@@ -46,10 +46,10 @@ export const apiKeys = pgTable(
     appId: uuid()
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
+    name: text().notNull(),
     /** First characters of the key, safe to show in the dashboard. */
     prefix: text().notNull(),
     hash: text().notNull(),
-    label: text(),
     createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
     revokedAt: timestamp({ withTimezone: true }),
   },
