@@ -32,7 +32,7 @@ import { Input } from "./ui/input"
 import { Button } from "./ui/button"
 import type { apps as appsTable } from "@/lib/schema"
 import { useState, type SubmitEvent } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
 import { Spinner } from "./ui/spinner"
 
 export function AppSwitcher({
@@ -40,9 +40,10 @@ export function AppSwitcher({
 }: {
   apps: (typeof appsTable.$inferSelect)[]
 }) {
+  const router = useRouter()
   const { isMobile } = useSidebar()
-  const [selectedApp, setActiveApp] = useState(apps[0])
-  const activeApp = selectedApp ?? apps[0]
+  const { appId } = useParams()
+  const activeApp = apps.find((app) => app.id === appId) ?? apps[0]
   const [open, setOpen] = useState(false)
 
   if (!activeApp) {
@@ -92,7 +93,7 @@ export function AppSwitcher({
               {apps.map((app, index) => (
                 <DropdownMenuItem
                   key={app.name}
-                  onClick={() => setActiveApp(app)}
+                  onSelect={() => router.push(`/dashboard/${app.id}`)}
                   className="gap-2 p-2"
                 >
                   <div className="flex size-6 items-center justify-center rounded-md border">
@@ -150,7 +151,10 @@ export function CreateAppForm({ onCreated }: { onCreated: () => void }) {
         throw new Error(data?.error ?? "Failed to create app")
       }
 
+      const createdApp = await response.json()
+
       onCreated()
+      router.push(`/dashboard/${createdApp.id}`)
       router.refresh()
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to create app")

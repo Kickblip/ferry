@@ -1,12 +1,20 @@
-export default function Page() {
-  return (
-    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-        <div className="aspect-video rounded-xl bg-muted/50" />
-        <div className="aspect-video rounded-xl bg-muted/50" />
-        <div className="aspect-video rounded-xl bg-muted/50" />
-      </div>
-      <div className="min-h-[100vh] flex-1 rounded-xl bg-muted/50 md:min-h-min" />
-    </div>
-  )
+import { redirect } from "next/navigation"
+import { auth } from "@clerk/nextjs/server"
+import { asc, eq } from "drizzle-orm"
+import { db } from "@/lib/db"
+import { apps } from "@/lib/schema"
+
+export default async function Page() {
+  const { userId } = await auth.protect()
+
+  const [app] = await db
+    .select({ id: apps.id })
+    .from(apps)
+    .where(eq(apps.ownerId, userId))
+    .orderBy(asc(apps.createdAt), asc(apps.id))
+    .limit(1)
+
+  if (app) redirect(`/dashboard/${app.id}`)
+
+  redirect("/dashboard/new")
 }
