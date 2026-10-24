@@ -1,10 +1,11 @@
-import { Geist, Geist_Mono, Noto_Sans } from "next/font/google"
-
+import { Geist_Mono, Noto_Sans } from "next/font/google"
+import { ClerkProvider } from "@clerk/nextjs"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"
+import { TooltipProvider } from "@/components/ui/tooltip"
 
-const notoSans = Noto_Sans({subsets:['latin'],variable:'--font-sans'})
+const notoSans = Noto_Sans({ subsets: ["latin"], variable: "--font-sans" })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -20,10 +21,19 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", notoSans.variable)}
+      className={cn(
+        "antialiased",
+        fontMono.variable,
+        "font-sans",
+        notoSans.variable
+      )}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ClerkProvider>
+          <ThemeProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </ThemeProvider>
+        </ClerkProvider>
       </body>
     </html>
   )
