@@ -17,7 +17,7 @@ import {
 import { UserButton } from "@clerk/nextjs"
 import type { apps as appsTable } from "@/lib/schema"
 import Link from "next/link"
-import { HouseHeart, Key, ShoppingBag } from "lucide-react"
+import { HouseHeart, Key, ShoppingBag, Webhook } from "lucide-react"
 import { useParams } from "next/navigation"
 
 export function NavSidebar({
@@ -61,6 +61,14 @@ export function NavSidebar({
                   <Link href={`/dashboard/${appId}/keys`}>
                     <Key />
                     <span>API Keys</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Webhooks">
+                  <Link href={`/dashboard/${appId}/webhooks`}>
+                    <Webhook />
+                    <span>Webhooks</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

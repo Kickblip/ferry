@@ -21,6 +21,11 @@ export const paymentStatusEnum = pgEnum("payment_status", [
   "EXPIRED",
 ])
 export const payoutStatusEnum = pgEnum("payout_status", ["PENDING", "PAID"])
+export const webhookDeliveryStatusEnum = pgEnum("webhook_delivery_status", [
+  "PENDING",
+  "DELIVERED",
+  "FAILED",
+])
 export const currencyEnum = pgEnum("currency", ["USD"])
 export const paymentFailureCodeEnum = pgEnum("payment_failure_code", [
   "INSUFFICIENT_FUNDS",
@@ -37,6 +42,8 @@ export const apps = pgTable("apps", {
   createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
   /** Prepared when the app is created or by payments:setup. */
   nessieAccountId: text(),
+  webhookUrl: text(),
+  webhookSecret: text(),
 })
 
 export const products = pgTable("products", {
@@ -119,6 +126,27 @@ export const payments = pgTable(
     index().on(t.appId, t.createdAt),
     index().on(t.status),
   ]
+)
+
+export const webhookDeliveries = pgTable(
+  "webhook_deliveries",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    appId: uuid()
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    paymentId: uuid()
+      .notNull()
+      .references(() => payments.id, { onDelete: "cascade" }),
+    eventType: text().notNull().default("payment.succeeded"),
+    callbackUrl: text().notNull(),
+    status: webhookDeliveryStatusEnum().notNull().default("PENDING"),
+    responseStatus: integer(),
+    error: text(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [uniqueIndex().on(t.paymentId), index().on(t.appId, t.createdAt)]
 )
 
 /** The developer's share of a payment, paid platform → developer in Nessie. */
