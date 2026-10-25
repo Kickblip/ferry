@@ -4,8 +4,8 @@ import { getPaymentByOrder } from "@/lib/payments/queries"
 import { publicPayment } from "@/lib/payments/views"
 
 /**
- * "Is this order paid?" — the fallback if a webhook never arrives. Returns the
- * latest payment attempt for the order.
+ * The game server checks this before granting an item. Returns the latest
+ * payment attempt for its order.
  */
 export const GET = appRoute<RouteContext<"/api/v1/orders/[orderId]">>(
   async (_request, svc, app, ctx) => {

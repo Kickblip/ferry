@@ -4,7 +4,6 @@ import {
   HttpNessieClient,
   type NessieClient,
 } from "@/lib/payments/nessie/client"
-import { FakeNessie } from "@/lib/payments/nessie/fake"
 
 /** Any Drizzle Postgres database: Neon in the app, PGlite in tests. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -16,7 +15,6 @@ export interface Services {
   config: Config
   db: Db
   nessie: NessieClient
-  fetch: typeof fetch
   now: () => Date
 }
 
@@ -32,11 +30,7 @@ export async function getServices(): Promise<Services> {
     globalForServices.__paymentServices = {
       config,
       db,
-      nessie:
-        config.nessieMode === "fake"
-          ? new FakeNessie()
-          : new HttpNessieClient(config.nessieBaseUrl, config.nessieApiKey),
-      fetch: (...args) => fetch(...args),
+      nessie: new HttpNessieClient(config.nessieBaseUrl, config.nessieApiKey),
       now: () => new Date(),
     }
   }

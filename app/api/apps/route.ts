@@ -1,6 +1,8 @@
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/lib/db"
 import { apps } from "@/lib/schema"
+import { setupAppPayments } from "@/lib/payments/apps"
+import { getServices } from "@/lib/payments/services"
 
 export async function POST(request: Request) {
   const { userId } = await auth()
@@ -17,10 +19,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const [app] = await db
-      .insert(apps)
-      .values({ name, ownerId: userId })
-      .returning()
+    const svc = await getServices()
+    const app = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(apps)
+        .values({ name, ownerId: userId })
+        .returning()
+      return setupAppPayments({ ...svc, db: tx }, created)
+    })
 
     return Response.json(app, { status: 201 })
   } catch (error) {

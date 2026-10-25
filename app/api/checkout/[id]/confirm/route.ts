@@ -11,9 +11,8 @@ const confirmInput = z.object({ paymentMethodId: z.string().min(1) })
 
 /**
  * Checkout page → Ferry: the player pays with one of their payment methods.
- * Safe to repeat (double-clicks never charge twice). Usually returns
- * "succeeded" or "failed" right away; if it returns "processing", poll
- * GET /api/checkout/{id}.
+ * Attempts the charge and payout in this request. Repeat this POST to resume
+ * unfinished steps; GET only reads status and never moves money.
  */
 export const POST = route<RouteContext<"/api/checkout/[id]/confirm">>(
   async (request, svc, ctx) => {

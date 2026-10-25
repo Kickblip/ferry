@@ -1,6 +1,4 @@
-import type { AmountUnit } from "@/lib/payments/config"
-import { ApiError } from "@/lib/payments/errors"
-import { fromNessieAmount, toNessieAmount } from "@/lib/payments/money"
+import { ApiError, NessieError } from "@/lib/payments/errors"
 import type { NessieClient, NessieTxn } from "@/lib/payments/nessie/client"
 import type { Movement } from "@/lib/payments/types"
 
@@ -21,8 +19,8 @@ export function newMovement(
     fromAccountId,
     toAccountId,
     amountCents,
-    withdrawal: { status: "pending" },
-    deposit: { status: "pending" },
+    withdrawal: { status: "PENDING" },
+    deposit: { status: "PENDING" },
   }
 }
 
@@ -32,8 +30,7 @@ export function newMovement(
  */
 export async function balanceCents(
   nessie: NessieClient,
-  accountId: string,
-  unit: AmountUnit
+  accountId: string
 ): Promise<number> {
   const [account, deposits, withdrawals] = await Promise.all([
     nessie.getAccount(accountId),
@@ -42,28 +39,22 @@ export async function balanceCents(
   ])
   const sum = (txns: NessieTxn[]) =>
     txns.filter(counts).reduce((total, t) => total + t.amount, 0)
-  return fromNessieAmount(
-    account.balance + sum(deposits) - sum(withdrawals),
-    unit
-  )
+  return account.balance + sum(deposits) - sum(withdrawals)
 }
 
 /**
- * Moves money as a withdrawal from the source and a deposit to the destination. Safe to call any
- * number of times for the same movement: before writing, each leg checks Nessie for a transaction
- * already tagged with this movement's ref, so a retry after a timeout never charges twice.
- * Returns the movement with updated leg states; it's complete when both legs are "completed".
+ * Reuses tagged bank records on retries. The caller serializes each movement.
+ * Updates the movement in place so partial progress survives a later error.
  */
 export async function advanceMovement(
   nessie: NessieClient,
   movement: Movement,
-  unit: AmountUnit,
   options: { note: string; checkFunds?: boolean }
 ): Promise<Movement> {
-  const next = structuredClone(movement)
-  const amount = toNessieAmount(movement.amountCents, unit)
+  const next = movement
+  const amount = movement.amountCents
 
-  if (next.withdrawal.status !== "completed") {
+  if (next.withdrawal.status !== "COMPLETED") {
     let existing = findByRef(
       await nessie.listWithdrawals(movement.fromAccountId),
       movement.ref
@@ -71,19 +62,30 @@ export async function advanceMovement(
     if (!existing) {
       if (
         options.checkFunds &&
-        (await balanceCents(nessie, movement.fromAccountId, unit)) <
+        (await balanceCents(nessie, movement.fromAccountId)) <
           movement.amountCents
       ) {
         throw new ApiError(
           402,
-          "insufficient_funds",
+          "INSUFFICIENT_FUNDS",
           "The payment was declined"
         )
       }
-      await nessie.createWithdrawal(movement.fromAccountId, {
-        amount,
-        description: describe(movement.ref, options.note),
-      })
+      try {
+        await nessie.createWithdrawal(movement.fromAccountId, {
+          amount,
+          description: describe(movement.ref, options.note),
+        })
+      } catch (err) {
+        if (err instanceof NessieError && !err.retryable) {
+          throw new ApiError(
+            402,
+            "NESSIE_REJECTED",
+            "The payment was declined by the bank"
+          )
+        }
+        throw err
+      }
       existing = findByRef(
         await nessie.listWithdrawals(movement.fromAccountId),
         movement.ref
@@ -91,13 +93,13 @@ export async function advanceMovement(
     }
     if (existing)
       next.withdrawal = {
-        status: existing.status === "completed" ? "completed" : "pending",
+        status: existing.status === "completed" ? "COMPLETED" : "PENDING",
         nessieId: existing._id,
       }
-    if (next.withdrawal.status !== "completed") return next
+    if (next.withdrawal.status !== "COMPLETED") return next
   }
 
-  if (next.deposit.status !== "completed") {
+  if (next.deposit.status !== "COMPLETED") {
     let existing = findByRef(
       await nessie.listDeposits(movement.toAccountId),
       movement.ref
@@ -114,7 +116,7 @@ export async function advanceMovement(
     }
     if (existing)
       next.deposit = {
-        status: existing.status === "completed" ? "completed" : "pending",
+        status: existing.status === "completed" ? "COMPLETED" : "PENDING",
         nessieId: existing._id,
       }
   }
@@ -122,4 +124,4 @@ export async function advanceMovement(
 }
 
 export const isComplete = (m: Movement) =>
-  m.withdrawal.status === "completed" && m.deposit.status === "completed"
+  m.withdrawal.status === "COMPLETED" && m.deposit.status === "COMPLETED"

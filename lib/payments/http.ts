@@ -59,23 +59,6 @@ export function appRoute<Ctx>(
   )
 }
 
-/** For /api/internal/*: cron and tooling only, guarded by INTERNAL_TOKEN. */
-export function internalRoute<Ctx>(handler: Handler<Ctx>) {
-  return route<Ctx>(async (request, svc, ctx) => {
-    const token = request.headers
-      .get("authorization")
-      ?.match(/^Bearer\s+(\S+)$/i)?.[1]
-    if (!svc.config.internalToken || token !== svc.config.internalToken) {
-      throw new ApiError(
-        401,
-        "unauthorized",
-        'Send "Authorization: Bearer <INTERNAL_TOKEN>"'
-      )
-    }
-    return handler(request, svc, ctx)
-  })
-}
-
 export async function parseBody<T>(
   request: Request,
   schema: ZodType<T>
@@ -87,13 +70,4 @@ export async function parseBody<T>(
     throw new ApiError(400, "invalid_json", "Request body must be JSON")
   }
   return schema.parse(body)
-}
-
-export function listOptions(request: Request) {
-  const params = new URL(request.url).searchParams
-  return {
-    limit: params.get("limit") ? Number(params.get("limit")) : undefined,
-    before: params.get("before") ?? undefined,
-    status: params.get("status") ?? undefined,
-  }
 }

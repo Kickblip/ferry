@@ -1,14 +1,12 @@
 import type { App } from "@/lib/payments/api-keys"
-import type { payments, payouts, webhookDeliveries } from "@/lib/schema"
+import type { payments } from "@/lib/schema"
 
 export type Payment = typeof payments.$inferSelect
-export type Payout = typeof payouts.$inferSelect
-export type WebhookDelivery = typeof webhookDeliveries.$inferSelect
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null)
 
 /**
- * How a payment appears to developers (API responses and webhooks). Like a
+ * How a payment appears to developers. Like a
  * card processor, it never includes anything about the player's bank account:
  * no account ids, balances, or bank transaction ids.
  */
@@ -34,7 +32,7 @@ export function publicPayment(p: Payment) {
   }
 }
 
-const FINAL = new Set(["succeeded", "failed", "canceled", "expired"])
+const FINAL = new Set(["SUCCEEDED", "FAILED", "CANCELED", "EXPIRED"])
 
 /** What the player-facing checkout page may see: no secrets, no other players. */
 export function checkoutView(
@@ -62,49 +60,5 @@ export function checkoutView(
     checkoutUrl,
     /** Where to send the player once the payment is final (null until then). */
     returnUrl,
-  }
-}
-
-/**
- * A payout as the developer sees it. Includes the deposit into *their own*
- * Nessie account (their bank reference), nothing about Ferry's or players'.
- */
-export function publicPayout(p: Payout) {
-  return {
-    id: p.id,
-    paymentId: p.paymentId,
-    amountCents: p.amountCents,
-    status: p.status,
-    attempts: p.attempts,
-    createdAt: iso(p.createdAt),
-    paidAt: iso(p.paidAt),
-    depositId: p.transfer.deposit.nessieId ?? null,
-  }
-}
-
-export function publicDelivery(d: WebhookDelivery) {
-  return {
-    id: d.id,
-    eventId: d.eventId,
-    type: d.type,
-    paymentId: d.paymentId,
-    status: d.status,
-    attempts: d.attempts,
-    responseStatus: d.responseStatus,
-    lastError: d.lastError,
-    nextAttemptAt: iso(d.nextAttemptAt),
-    createdAt: iso(d.createdAt),
-    deliveredAt: iso(d.deliveredAt),
-  }
-}
-
-export function publicPaymentSettings(app: App) {
-  return {
-    appId: app.id,
-    name: app.name,
-    nessieAccountId: app.nessieAccountId,
-    webhookUrl: app.webhookUrl,
-    hasWebhookSecret: !!app.webhookSecret,
-    feeBps: app.feeBps,
   }
 }

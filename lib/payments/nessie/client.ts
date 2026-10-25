@@ -1,6 +1,6 @@
 import { NessieError } from "@/lib/payments/errors"
 
-/** A deposit or withdrawal as Nessie returns it. Amounts are Nessie's whole numbers (see NESSIE_AMOUNT_UNIT). */
+/** A deposit or withdrawal as Nessie returns it. Ferry stores amounts as integer cents. */
 export interface NessieTxn {
   _id: string
   amount: number

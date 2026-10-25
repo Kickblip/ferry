@@ -7,8 +7,7 @@ import {
 import { checkoutView } from "@/lib/payments/views"
 
 /**
- * Checkout page → Ferry: load the session. Poll this while the status is
- * "processing"; each call also nudges the payment forward.
+ * Checkout page → Ferry: load the session without retrying bank operations.
  */
 export const GET = route<RouteContext<"/api/checkout/[id]">>(
   async (_request, svc, ctx) => {

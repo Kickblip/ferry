@@ -9,10 +9,9 @@ import "dotenv/config"
 import { eq } from "drizzle-orm"
 import { apps } from "@/lib/schema"
 import { generateApiKey, registerApiKey } from "@/lib/payments/api-keys"
-import { getServices } from "@/lib/payments/services"
+import { db } from "@/lib/db"
 
 async function main() {
-  const { db } = await getServices()
   const appId = process.argv[2]
   if (!appId) {
     const all = await db.select({ id: apps.id, name: apps.name }).from(apps)
