@@ -76,7 +76,7 @@ export function AppSwitcher({
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{activeApp.name}</span>
-                  <span className="truncate text-xs">sdfsdf</span>
+                  <span className="truncate text-xs">Application</span>
                 </div>
                 <ChevronsUpDown className="ml-auto" />
               </SidebarMenuButton>
