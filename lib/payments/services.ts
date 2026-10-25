@@ -5,10 +5,9 @@ import {
   type NessieClient,
 } from "@/lib/payments/nessie/client"
 
-/** Any Drizzle Postgres database: Neon in the app, PGlite in tests. */
+/** The Drizzle Postgres database used by the payment service. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Db = PgAsyncDatabase<any, any>
-export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0]
 
 /** Everything the payment logic depends on, so tests can swap in fakes. */
 export interface Services {

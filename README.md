@@ -4,17 +4,17 @@ Ferry is a hackathon demo for selling game items through a game's own checkout.
 Clerk handles developer sign-in, Postgres stores apps/products/payments, and
 Capital One's Nessie simulates the bank.
 
-A purchase runs in one confirmation request: charge the player, record the
-payment, and attempt the developer payout. Amounts are integer cents, the fee
-is 5%, and checkout sessions expire after 10 minutes.
+Clicking **Pay** assumes payment succeeded and deposits the full purchase amount
+into Ferry's Nessie account. No payment processor or customer bank account is
+used, and the checkout sends no card or shipping data. The recorded commission
+is 5%; funds stay in Ferry's account. Amounts are integer cents throughout,
+including Nessie, and checkout sessions expire after 10 minutes.
 
 ## Run locally
 
-Install dependencies and configure `.env` with `DATABASE_URL`, Clerk keys,
-`NESSIE_API_KEY`, and `PUBLIC_BASE_URL=http://localhost:3000`.
-`NESSIE_BASE_URL` defaults to `https://api.nessieisreal.com`.
-
-For a **new database**:
+Configure `.env` with `DATABASE_URL`, Clerk keys, `NESSIE_API_KEY`, and
+`PUBLIC_BASE_URL=http://localhost:3000`. `NESSIE_BASE_URL` defaults to
+`https://api.nessieisreal.com`.
 
 ```bash
 npm install
@@ -23,54 +23,49 @@ npm run payments:setup
 npm run dev
 ```
 
-For an **existing database from the previous payments branch**, stop the old
-server/worker and run [scripts/migrate-payment-enums.sql](scripts/migrate-payment-enums.sql)
-once before starting this version. It converts existing values to uppercase
-Postgres enums and preserves historical removed fields/tables. A later
-`db:push` may propose deleting that unused historical data; review its prompt.
+Run `db:push` for an existing database too: payments now store the Nessie deposit
+ID and settlement time. Review Drizzle's proposed changes before applying them.
+`payments:setup` reuses the configured platform account or creates it and saves
+`PLATFORM_ACCOUNT_ID` to `.env`. It also prepares app payout accounts; checkout
+does not pay them automatically. Restart the server after changing `.env`.
 
-`payments:setup` creates the platform account and demo payer accounts, saves
-`PLATFORM_ACCOUNT_ID` to `.env`, and prepares payout accounts for existing
-applications. New applications get their payout account when created in the
-dashboard. Restart the server after changing `.env`.
+## Try a checkout
+
+Create an application, product, and API key in the dashboard. From your terminal
+or game server, create a checkout with that application's key and product ID:
 
 ```bash
-npm run payments:test-key             # list applications
-npm run payments:test-key -- <appId>   # generate an API key
-npm test                              # in-memory Postgres + fake bank
-npm run payments:live-test            # purchase via running server and Nessie
+curl http://localhost:3000/api/v1/checkout/sessions \
+  -H 'Authorization: Bearer YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{"productId":"YOUR_PRODUCT_ID","orderId":"demo-1","playerId":"demo-player","returnUrl":"http://localhost:3000"}'
 ```
 
-## Demo flow
+Open the returned `checkoutUrl`, then click **Pay**. The game server can read
+`GET /api/v1/orders/demo-1` with the same API key and grant the item when status
+is `SUCCEEDED`. Use a new `orderId` to test another purchase.
 
-1. The game server creates a checkout with its API key and a Ferry product ID.
-2. The checkout calls the public confirmation endpoint with a demo payment method.
-3. Ferry charges the player and attempts the payout in that request.
-4. The game server reads the order endpoint and grants the item once the status
-   is `SUCCEEDED`.
+If Nessie is unavailable, the demo payment still succeeds; use **Retry Nessie
+deposit** on checkout to finish settlement. Repeating confirmation reuses the
+payment's existing deposit. There is no background retry or webhook delivery.
+Retry recovery is best effort: if a timed-out Nessie write is still invisible
+when retried, a duplicate deposit is possible.
 
-There is no worker, cron, webhook delivery system, or automatic retry. A
-`PROCESSING` payment can be resumed by explicitly repeating confirmation with
-the original payment method. A successful payment with an unfinished payout
-can also be confirmed again to retry only the payout.
-
-The payment API is implemented; the browser page at `/checkout/[id]` still
-needs to be built. The live-test script exercises the API directly.
-
-Full request/response details: [Payments API](docs/payments-api.md).
+```bash
+node --import tsx --test lib/payments/ledger.test.ts  # local deposit/retry checks
+npm run payments:live-test  # creates a demo purchase in your database and Nessie
+```
 
 ## Code map
 
-| Path                           | Purpose                                                       |
-| ------------------------------ | ------------------------------------------------------------- |
-| `app/dashboard`                | Developer dashboard                                           |
-| `app/api/apps`                 | Clerk-authenticated app/product creation                      |
-| `app/api/v1/checkout/sessions` | Game-server checkout creation                                 |
-| `app/api/v1/orders/[orderId]`  | Authoritative purchase status for the game server             |
-| `app/api/checkout/[id]`        | Checkout display, payment methods, confirmation, cancellation |
-| `lib/payments/payments.ts`     | Purchase flow and explicit retries                            |
-| `lib/payments/ledger.ts`       | Tagged withdrawal/deposit pairs and balances                  |
-| `lib/payments/nessie`          | Bank HTTP client and test fake                                |
-| `lib/schema.ts`                | Tables and uppercase Postgres enums                           |
+| Path                           | Purpose                                      |
+| ------------------------------ | -------------------------------------------- |
+| `app/checkout/[id]`            | Customer checkout page                       |
+| `app/api/v1/checkout/sessions` | Game-server checkout creation                |
+| `app/api/v1/orders/[orderId]`  | Authoritative purchase status                |
+| `app/api/checkout/[id]`        | Checkout display, confirmation, cancellation |
+| `lib/payments/payments.ts`     | Simulated payment and settlement retries     |
+| `lib/payments/ledger.ts`       | Tagged Nessie deposits and balances          |
+| `lib/schema.ts`                | Tables and uppercase Postgres enums          |
 
 The UI uses shadcn/ui. Add components with `npx shadcn@latest add button`.

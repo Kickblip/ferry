@@ -69,7 +69,7 @@ export const apiKeys = pgTable(
   (t) => [uniqueIndex().on(t.hash), index().on(t.appId)]
 )
 
-/** Pre-made Nessie accounts players can pay from on the checkout page. */
+/** Historical demo payer accounts; simulated checkouts no longer use these. */
 export const payerAccounts = pgTable("payer_accounts", {
   nessieAccountId: text().primaryKey(),
   label: text().notNull(),
@@ -97,8 +97,11 @@ export const payments = pgTable(
     status: paymentStatusEnum().notNull().default("REQUIRES_CONFIRMATION"),
     returnUrl: text(),
     metadata: jsonb().$type<Record<string, string>>(),
+    /** The gross demo payment deposited into Ferry's Nessie account. */
+    nessieDepositId: text(),
+    settledAt: timestamp({ withTimezone: true }),
     payerAccountId: text(),
-    /** Player → platform money movement in Nessie. */
+    /** Historical account-based payments; new checkouts use a simulated deposit. */
     charge: jsonb().$type<Movement>(),
     failureCode: paymentFailureCodeEnum(),
     failureMessage: text(),

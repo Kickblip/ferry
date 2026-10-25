@@ -12,6 +12,7 @@ const iso = (d: Date | null) => (d ? d.toISOString() : null)
  */
 export function publicPayment(p: Payment) {
   return {
+    simulated: true,
     id: p.id,
     orderId: p.orderId,
     productId: p.productId,
@@ -29,6 +30,7 @@ export function publicPayment(p: Payment) {
     confirmedAt: iso(p.confirmedAt),
     succeededAt: iso(p.succeededAt),
     expiresAt: iso(p.expiresAt),
+    settledAt: iso(p.settledAt),
   }
 }
 
@@ -58,6 +60,8 @@ export function checkoutView(
     failureCode: p.failureCode,
     failureMessage: p.failureMessage,
     checkoutUrl,
+    simulated: true,
+    settled: !!p.settledAt,
     /** Where to send the player once the payment is final (null until then). */
     returnUrl,
   }

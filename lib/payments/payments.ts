@@ -1,12 +1,11 @@
-import crypto from "node:crypto"
 import { and, eq, notInArray } from "drizzle-orm"
 import { z } from "zod"
-import { apps, payerAccounts, payments, payouts, products } from "@/lib/schema"
+import { apps, payments, products } from "@/lib/schema"
 import type { App } from "@/lib/payments/api-keys"
 import { ApiError } from "@/lib/payments/errors"
-import { advanceMovement, isComplete, newMovement } from "@/lib/payments/ledger"
+import { settleDeposit } from "@/lib/payments/ledger"
 import { splitPayment } from "@/lib/payments/money"
-import type { Services, Tx } from "@/lib/payments/services"
+import type { Services } from "@/lib/payments/services"
 import type { Payment } from "@/lib/payments/views"
 
 const FINAL_FAILURES = ["FAILED", "CANCELED", "EXPIRED"] as const
@@ -79,7 +78,7 @@ export async function createCheckout(
       "This product has no valid price"
     )
   }
-  if (!app.nessieAccountId || !svc.config.platformAccountId) {
+  if (!svc.config.platformAccountId) {
     throw new ApiError(
       503,
       "payments_not_configured",
@@ -150,193 +149,114 @@ export async function getPaymentApp(svc: Services, payment: Payment) {
   return app
 }
 
-/** Reads never charge a player or retry a payout. */
+/** Reads never confirm a payment or retry a Nessie deposit. */
 export async function getCheckout(svc: Services, id: string): Promise<Payment> {
   return expireIfDue(svc, await loadPayment(svc, id))
 }
 
-export function paymentMethodId(nessieAccountId: string) {
-  const digest = crypto
-    .createHash("sha256")
-    .update(`ferry-payment-method:${nessieAccountId}`)
-    .digest("hex")
-  return `pm_${digest.slice(0, 24)}`
-}
-
-export async function listPaymentMethods(svc: Services) {
-  const accounts = await svc.db
-    .select()
-    .from(payerAccounts)
-    .orderBy(payerAccounts.label)
-  return accounts.map((a) => ({
-    id: paymentMethodId(a.nessieAccountId),
-    label: a.label,
-  }))
-}
-
 /**
- * shortcut: bank calls run inside this request and DB transaction; use a durable
- * worker if unattended recovery or checkout latency becomes a requirement.
- * Repeating this POST resumes the saved charge or payout.
+ * Demo payment always succeeds. Nessie settlement is a separate, retryable deposit.
+ * shortcut: settlement runs in the request; add a worker if automatic recovery is needed.
  */
 export async function confirmCheckout(
   svc: Services,
-  id: string,
-  methodId: string
+  id: string
 ): Promise<Payment> {
-  const initial = await getCheckout(svc, id)
-  if (initial.status === "EXPIRED") {
+  await loadPayment(svc, id)
+  if (!svc.config.platformAccountId) {
+    throw new ApiError(
+      503,
+      "payments_not_configured",
+      "Run payments:setup before accepting payments"
+    )
+  }
+  const confirmed = await svc.db.transaction(async (tx) => {
+    const [payment] = await tx
+      .select()
+      .from(payments)
+      .where(eq(payments.id, id))
+      .for("update")
+    if (
+      payment.status === "SUCCEEDED" ||
+      FINAL_FAILURES.some((status) => status === payment.status)
+    )
+      return payment
+    const now = svc.now()
+    const expired =
+      payment.status === "REQUIRES_CONFIRMATION" && payment.expiresAt <= now
+    const [updated] = await tx
+      .update(payments)
+      .set(
+        expired
+          ? { status: "EXPIRED", updatedAt: now }
+          : {
+              status: "SUCCEEDED",
+              confirmedAt: payment.confirmedAt ?? now,
+              succeededAt: now,
+              updatedAt: now,
+              failureCode: null,
+              failureMessage: null,
+            }
+      )
+      .where(eq(payments.id, id))
+      .returning()
+    return updated
+  })
+  if (confirmed.status === "EXPIRED") {
     throw new ApiError(
       410,
       "session_expired",
       "This checkout session has expired"
     )
   }
+  if (confirmed.status !== "SUCCEEDED") {
+    throw new ApiError(
+      409,
+      "checkout_not_payable",
+      "This checkout can no longer be paid"
+    )
+  }
+
+  // Commit the demo payment before contacting Nessie, so an outage cannot undo it.
   return svc.db.transaction(async (tx) => {
-    let [payment] = await tx
+    const [payment] = await tx
       .select()
       .from(payments)
       .where(eq(payments.id, id))
       .for("update")
-    if (FINAL_FAILURES.some((status) => status === payment.status))
-      return payment
-    if (
-      payment.payerAccountId &&
-      paymentMethodId(payment.payerAccountId) !== methodId
-    ) {
-      throw new ApiError(
-        409,
-        "payment_method_conflict",
-        "Retry with the original payment method"
+    if (payment.settledAt) return payment
+    let nessieDepositId: string
+    try {
+      nessieDepositId = await settleDeposit(
+        svc.nessie,
+        svc.config.platformAccountId,
+        payment.id,
+        payment.amountCents
       )
-    }
-    const [app] = await tx.select().from(apps).where(eq(apps.id, payment.appId))
-
-    if (payment.status !== "SUCCEEDED") {
-      if (!app.nessieAccountId || !svc.config.platformAccountId) {
-        throw new ApiError(
-          503,
-          "payments_not_configured",
-          "Run payments:setup before accepting payments"
-        )
-      }
-      const accounts = await tx.select().from(payerAccounts)
-      const payer = accounts.find(
-        (account) => paymentMethodId(account.nessieAccountId) === methodId
-      )
-      if (!payer)
-        throw new ApiError(
-          400,
-          "unknown_payment_method",
-          "Choose one of the listed payment methods"
-        )
-      // Different orders using one demo account must check its funds in order.
-      await tx
-        .select()
-        .from(payerAccounts)
-        .where(eq(payerAccounts.nessieAccountId, payer.nessieAccountId))
-        .for("update")
-
-      const charge =
-        payment.charge ??
-        newMovement(
-          payment.id,
-          payer.nessieAccountId,
-          svc.config.platformAccountId,
-          payment.amountCents
-        )
-      let failureCode: Payment["failureCode"] = null
-      let failureMessage: string | null = null
-      let lastError: string | null = null
-      try {
-        await advanceMovement(svc.nessie, charge, {
-          note: `payment ${payment.orderId}`,
-          checkFunds: true,
-        })
-      } catch (err) {
-        lastError = (err as Error).message
-        // Only explicit pre-withdrawal declines are final; partial moves remain resumable.
-        if (
-          err instanceof ApiError &&
-          (err.code === "INSUFFICIENT_FUNDS" || err.code === "NESSIE_REJECTED")
-        ) {
-          failureCode = err.code
-          failureMessage = err.message
-        }
-      }
-      const status = failureCode
-        ? "FAILED"
-        : isComplete(charge)
-          ? "SUCCEEDED"
-          : "PROCESSING"
-      ;[payment] = await tx
+    } catch (error) {
+      const [pending] = await tx
         .update(payments)
         .set({
-          status,
-          charge,
-          payerAccountId: payer.nessieAccountId,
-          confirmedAt: payment.confirmedAt ?? svc.now(),
-          succeededAt: status === "SUCCEEDED" ? svc.now() : null,
-          failureCode,
-          failureMessage,
-          lastError,
+          lastError:
+            error instanceof Error ? error.message : "Nessie deposit failed",
           updatedAt: svc.now(),
         })
         .where(eq(payments.id, id))
         .returning()
+      return pending
     }
-
-    if (payment.status === "SUCCEEDED")
-      await payDeveloper(svc, tx, payment, app)
-    return payment
-  })
-}
-
-async function payDeveloper(svc: Services, tx: Tx, payment: Payment, app: App) {
-  let [payout] = await tx
-    .select()
-    .from(payouts)
-    .where(eq(payouts.paymentId, payment.id))
-  if (!payout) {
-    // A stable ref also survives a DB rollback after Nessie accepted the payout.
-    ;[payout] = await tx
-      .insert(payouts)
-      .values({
-        id: payment.id,
-        paymentId: payment.id,
-        appId: payment.appId,
-        amountCents: payment.netCents,
-        transfer: newMovement(
-          `payout:${payment.id}`,
-          svc.config.platformAccountId,
-          app.nessieAccountId!,
-          payment.netCents
-        ),
-        createdAt: svc.now(),
+    const [settled] = await tx
+      .update(payments)
+      .set({
+        nessieDepositId,
+        settledAt: svc.now(),
+        lastError: null,
         updatedAt: svc.now(),
       })
+      .where(eq(payments.id, id))
       .returning()
-  }
-  if (payout.status === "PAID") return
-  let lastError: string | null = null
-  try {
-    await advanceMovement(svc.nessie, payout.transfer, {
-      note: `payout ${payment.id}`,
-    })
-  } catch (err) {
-    lastError = (err as Error).message
-  }
-  const paid = isComplete(payout.transfer)
-  await tx
-    .update(payouts)
-    .set({
-      transfer: payout.transfer,
-      status: paid ? "PAID" : "PENDING",
-      lastError,
-      paidAt: paid ? svc.now() : null,
-      updatedAt: svc.now(),
-    })
-    .where(eq(payouts.id, payout.id))
+    return settled
+  })
 }
 
 export async function cancelCheckout(

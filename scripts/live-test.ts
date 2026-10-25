@@ -6,11 +6,10 @@ import "dotenv/config"
 import assert from "node:assert/strict"
 import crypto from "node:crypto"
 import { and, eq } from "drizzle-orm"
-import { apps, payerAccounts, payouts, products } from "@/lib/schema"
+import { apps, payouts, products } from "@/lib/schema"
 import { generateApiKey, registerApiKey } from "@/lib/payments/api-keys"
 import { setupAppPayments } from "@/lib/payments/apps"
 import { balanceCents } from "@/lib/payments/ledger"
-import { paymentMethodId } from "@/lib/payments/payments"
 import { getServices } from "@/lib/payments/services"
 
 const BASE = (process.env.PUBLIC_BASE_URL || "http://localhost:3000").replace(
@@ -38,6 +37,9 @@ async function api<T>(
 
 async function main() {
   const svc = await getServices()
+  if (!svc.config.platformAccountId) {
+    throw new Error("Run npm run payments:setup and restart the server first")
+  }
   let [app] = await svc.db
     .select()
     .from(apps)
@@ -59,18 +61,10 @@ async function main() {
       .values({ appId: app.id, name: "Live Test Gems", price: 499 })
       .returning()
   }
-  const [payer] = await svc.db
-    .select()
-    .from(payerAccounts)
-    .where(eq(payerAccounts.label, "Demo Player 1"))
-    .limit(1)
-  if (!payer) throw new Error("Run npm run payments:setup first")
-
   const key = generateApiKey()
   await registerApiKey(svc.db, app.id, key, "live test")
   const balances = async () =>
     Promise.all([
-      balanceCents(svc.nessie, payer.nessieAccountId),
       balanceCents(svc.nessie, svc.config.platformAccountId),
       balanceCents(svc.nessie, app.nessieAccountId!),
     ])
@@ -79,8 +73,6 @@ async function main() {
   const session = await api<{
     id: string
     amountCents: number
-    feeCents: number
-    netCents: number
     checkoutUrl: string
   }>("POST", "/api/v1/checkout/sessions", {
     key,
@@ -93,11 +85,12 @@ async function main() {
   })
   console.log(`Created checkout ${session.id}: ${session.amountCents} cents`)
   const confirm = () =>
-    api<{ status: string }>("POST", `/api/checkout/${session.id}/confirm`, {
-      body: { paymentMethodId: paymentMethodId(payer.nessieAccountId) },
-    })
+    api<{ status: string; settled: boolean }>(
+      "POST",
+      `/api/checkout/${session.id}/confirm`
+    )
   const confirmations = await Promise.all([confirm(), confirm()])
-  assert(confirmations.every((p) => p.status === "SUCCEEDED"))
+  assert(confirmations.every((p) => p.status === "SUCCEEDED" && p.settled))
 
   const order = await api<{ id: string; status: string }>(
     "GET",
@@ -110,19 +103,17 @@ async function main() {
     .select()
     .from(payouts)
     .where(eq(payouts.paymentId, session.id))
-  assert.equal(payout?.status, "PAID")
+  assert.equal(payout, undefined)
   const after = await balances()
-  assert.equal(after[0] - before[0], -session.amountCents)
-  assert.equal(after[1] - before[1], session.feeCents)
-  assert.equal(after[2] - before[2], session.netCents)
-  const withdrawals = await svc.nessie.listWithdrawals(payer.nessieAccountId)
+  assert.equal(after[0] - before[0], session.amountCents)
+  assert.equal(after[1], before[1])
+  const deposits = await svc.nessie.listDeposits(svc.config.platformAccountId)
   assert.equal(
-    withdrawals.filter((t) => t.description.split(" ")[0] === session.id)
-      .length,
+    deposits.filter((t) => t.description.split(" ")[0] === session.id).length,
     1
   )
   console.log(
-    "Passed: one charge, inline payout, correct fee, and verified order status."
+    "Passed: successful demo payment, one full deposit into Ferry, and no automatic payout."
   )
   process.exit(0)
 }
