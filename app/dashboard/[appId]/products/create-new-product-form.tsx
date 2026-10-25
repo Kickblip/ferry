@@ -1,9 +1,12 @@
 "use client"
 
 import {
+  Dialog,
+  DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -13,12 +16,20 @@ import { DialogClose, DialogFooter } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
 import { useState, type SubmitEvent } from "react"
 import { useParams, useRouter } from "next/navigation"
+import { Plus } from "lucide-react"
 
 export function CreateNewProductForm() {
   const { appId } = useParams<{ appId: string }>()
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (pending) return
+    setOpen(nextOpen)
+    setError(null)
+  }
 
   async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -40,6 +51,7 @@ export function CreateNewProductForm() {
         `/api/apps/${encodeURIComponent(appId)}/products`,
         {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
         }
       )
@@ -50,6 +62,7 @@ export function CreateNewProductForm() {
       }
 
       form.reset()
+      setOpen(false)
       router.refresh()
     } catch (error) {
       setError(
@@ -61,33 +74,47 @@ export function CreateNewProductForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-6">
-      <DialogHeader>
-        <DialogTitle>Create New Product</DialogTitle>
-        <DialogDescription>
-          Start a new product to manage your offerings
-        </DialogDescription>
-      </DialogHeader>
-
-      <FieldGroup>
-        <Field>
-          <Label htmlFor="name">Name</Label>
-          <Input id="name" name="name" placeholder="100 Gems" />
-        </Field>
-      </FieldGroup>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      <DialogFooter className="-mx-6 -mb-6 rounded-b-xl border-t bg-secondary p-4">
-        <DialogClose asChild>
-          <Button type="button" variant="outline" disabled={pending}>
-            Cancel
-          </Button>
-        </DialogClose>
-        <Button type="submit" disabled={pending}>
-          {pending ? <Spinner /> : "Create Product"}
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="shrink-0">
+          <Plus className="size-4" />
+          <span className="font-medium">Create New Product</span>
         </Button>
-      </DialogFooter>
-    </form>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <form onSubmit={handleSubmit} className="grid gap-6">
+          <DialogHeader>
+            <DialogTitle>Create New Product</DialogTitle>
+            <DialogDescription>
+              Start a new product to manage your offerings
+            </DialogDescription>
+          </DialogHeader>
+
+          <FieldGroup>
+            <Field>
+              <Label htmlFor="name">Name</Label>
+              <Input id="name" name="name" placeholder="100 Gems" required />
+            </Field>
+          </FieldGroup>
+
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+
+          <DialogFooter className="-mx-6 -mb-6 rounded-b-xl border-t bg-secondary p-4">
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={pending}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" disabled={pending}>
+              {pending ? <Spinner /> : "Create Product"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

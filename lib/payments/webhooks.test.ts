@@ -1,7 +1,40 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { paymentWebhookBody, signWebhook } from "./webhooks"
+import {
+  deliverPaymentWebhook,
+  paymentWebhookBody,
+  signWebhook,
+} from "./webhooks"
+import type { Services } from "./services"
 import type { Payment } from "./views"
+
+test("webhook delivery waits for both payment success and Nessie settlement", async () => {
+  const svc = {
+    db: { select: () => assert.fail("Should not start webhook delivery") },
+  } as unknown as Services
+  for (const payment of [
+    { status: "SUCCEEDED", settledAt: null },
+    { status: "FAILED", settledAt: new Date() },
+  ]) {
+    await deliverPaymentWebhook(svc, payment as Payment)
+  }
+})
+
+test("a settled payment skips delivery when no callback URL is configured", async () => {
+  const svc = {
+    db: {
+      select: () => ({
+        from: () => ({ where: async () => [{ url: null, secret: null }] }),
+      }),
+      insert: () => assert.fail("Should not create a webhook attempt"),
+    },
+  } as unknown as Services
+  await deliverPaymentWebhook(svc, {
+    status: "SUCCEEDED",
+    settledAt: new Date(),
+    appId: "app-1",
+  } as Payment)
+})
 
 test("signatures cover the timestamp and exact request body", () => {
   const body = '{"id":"event-1"}'
@@ -35,7 +68,7 @@ test("payment events include fulfillment details without bank or internal fields
     returnUrl: "game://checkout",
     metadata: { level: "1" },
     nessieDepositId: "private-deposit",
-    settledAt: null,
+    settledAt: now,
     payerAccountId: "private-account",
     charge: null,
     failureCode: null,
@@ -57,7 +90,7 @@ test("payment events include fulfillment details without bank or internal fields
   assert.equal(event.data.amountCents, 499)
   assert.equal(event.data.status, "SUCCEEDED")
   assert.equal(event.data.simulated, true)
-  assert.equal(event.data.settledAt, null)
+  assert.equal(event.data.settledAt, now.toISOString())
   for (const field of [
     "nessieDepositId",
     "payerAccountId",

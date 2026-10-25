@@ -53,6 +53,8 @@ export const products = pgTable("products", {
     .references(() => apps.id, { onDelete: "restrict" }),
   name: text().notNull(),
   price: integer().notNull(),
+  imageUrl: text(),
+  imageKey: text(),
 })
 
 /**

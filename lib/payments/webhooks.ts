@@ -29,7 +29,7 @@ export async function deliverPaymentWebhook(
   svc: Services,
   payment: Payment
 ): Promise<void> {
-  if (payment.status !== "SUCCEEDED") return
+  if (payment.status !== "SUCCEEDED" || !payment.settledAt) return
   const [app] = await svc.db
     .select({ url: apps.webhookUrl, secret: apps.webhookSecret })
     .from(apps)

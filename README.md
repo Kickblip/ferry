@@ -30,6 +30,23 @@ database fields. Review Drizzle's proposed changes before applying them.
 `PLATFORM_ACCOUNT_ID` to `.env`. It also prepares app payout accounts; checkout
 does not pay them automatically. Restart the server after changing `.env`.
 
+## Product images
+
+Set `UPLOADTHING_TOKEN` in `.env` using your UploadThing dashboard token and run
+`npm run db:push` to add the product image URL and file-key columns. See the
+[UploadThing setup guide](https://docs.uploadthing.com/getting-started/appdir).
+Keep the token server-side and configure it in your deployment environment too.
+
+Open a product to upload one image up to 4 MB. It saves automatically and appears
+as a square preview; uploading another image replaces it. Name and price changes
+still use **Save Changes**. The upload route checks that the signed-in user owns
+the product, and only UploadThing's verified completion callback saves the image.
+Replaced files are removed after the new image is saved; if cleanup fails, the
+old file remains in UploadThing and can be removed from its dashboard.
+
+The npm `effect` override keeps UploadThing's dependency on a patched release for
+[GHSA-38f7-945m-qr2g](https://github.com/advisories/GHSA-38f7-945m-qr2g).
+
 ## Try a checkout
 
 Create an application, product, and API key in the dashboard. From your terminal
@@ -66,7 +83,8 @@ Use an HTTPS tunnel when testing a receiver on your own machine.
 After checkout succeeds, Ferry sends a POST with
 `{ id, type: "payment.succeeded", createdAt, data }`. `data` contains the payment
 details, including `orderId`, `playerId`, `productId`, and `simulated: true`.
-The event is sent even if the Nessie deposit is pending. The page lists the
+The event is sent after Nessie confirms the deposit; apps without a callback URL
+are skipped. The page lists the
 latest 50 calls and their HTTP results; reload it to see new calls.
 
 Verify the `X-Ferry-Signature` header, formatted `t=<unix-seconds>,v1=<hex>`.
