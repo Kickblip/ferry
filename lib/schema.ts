@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm"
 import {
   pgTable,
+  pgEnum,
   uuid,
   text,
   timestamp,
@@ -11,19 +12,31 @@ import {
 } from "drizzle-orm/pg-core"
 import type { Movement } from "@/lib/payments/types"
 
+export const paymentStatusEnum = pgEnum("payment_status", [
+  "REQUIRES_CONFIRMATION",
+  "PROCESSING",
+  "SUCCEEDED",
+  "FAILED",
+  "CANCELED",
+  "EXPIRED",
+])
+export const payoutStatusEnum = pgEnum("payout_status", ["PENDING", "PAID"])
+export const currencyEnum = pgEnum("currency", ["USD"])
+export const paymentFailureCodeEnum = pgEnum("payment_failure_code", [
+  "INSUFFICIENT_FUNDS",
+  "NESSIE_REJECTED",
+  // Kept so existing failures survive the enum migration.
+  "NESSIE_UNAVAILABLE",
+  "AMOUNT_NOT_WHOLE_DOLLARS",
+])
+
 export const apps = pgTable("apps", {
   id: uuid().defaultRandom().primaryKey(),
   ownerId: text().notNull(),
   name: text().notNull(),
   createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
-  // Payments: filled in automatically the first time the app takes a payment.
-  /** Nessie account that receives this app's payouts. */
+  /** Prepared when the app is created or by payments:setup. */
   nessieAccountId: text(),
-  webhookUrl: text(),
-  /** Signs webhooks sent to webhookUrl (HMAC-SHA256). */
-  webhookSecret: text(),
-  /** Overrides the platform fee for this app, in basis points (500 = 5%). */
-  feeBps: integer(),
 })
 
 export const products = pgTable("products", {
@@ -78,20 +91,17 @@ export const payments = pgTable(
     playerId: text().notNull(),
     description: text().notNull(),
     amountCents: integer().notNull(),
-    currency: text().notNull().default("usd"),
+    currency: currencyEnum().notNull().default("USD"),
     feeCents: integer().notNull(),
     netCents: integer().notNull(),
-    /** requires_confirmation | processing | succeeded | failed | canceled | expired */
-    status: text().notNull(),
+    status: paymentStatusEnum().notNull().default("REQUIRES_CONFIRMATION"),
     returnUrl: text(),
     metadata: jsonb().$type<Record<string, string>>(),
     payerAccountId: text(),
     /** Player → platform money movement in Nessie. */
     charge: jsonb().$type<Movement>(),
-    failureCode: text(),
+    failureCode: paymentFailureCodeEnum(),
     failureMessage: text(),
-    attempts: integer().notNull().default(0),
-    nextAttemptAt: timestamp({ withTimezone: true }),
     lastError: text(),
     createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
@@ -102,7 +112,7 @@ export const payments = pgTable(
   (t) => [
     uniqueIndex("payments_active_order_idx")
       .on(t.appId, t.orderId)
-      .where(sql`${t.status} not in ('failed', 'canceled', 'expired')`),
+      .where(sql`${t.status} not in ('FAILED', 'CANCELED', 'EXPIRED')`),
     index().on(t.appId, t.createdAt),
     index().on(t.status),
   ]
@@ -120,41 +130,12 @@ export const payouts = pgTable(
       .notNull()
       .references(() => apps.id, { onDelete: "restrict" }),
     amountCents: integer().notNull(),
-    /** pending | processing | paid */
-    status: text().notNull(),
+    status: payoutStatusEnum().notNull().default("PENDING"),
     transfer: jsonb().$type<Movement>().notNull(),
-    attempts: integer().notNull().default(0),
-    nextAttemptAt: timestamp({ withTimezone: true }),
     lastError: text(),
     createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
     paidAt: timestamp({ withTimezone: true }),
   },
   (t) => [uniqueIndex().on(t.paymentId), index().on(t.appId)]
-)
-
-export const webhookDeliveries = pgTable(
-  "webhook_deliveries",
-  {
-    id: uuid().defaultRandom().primaryKey(),
-    appId: uuid()
-      .notNull()
-      .references(() => apps.id, { onDelete: "cascade" }),
-    eventId: text().notNull(),
-    /** payment.succeeded | payment.failed */
-    type: text().notNull(),
-    paymentId: uuid()
-      .notNull()
-      .references(() => payments.id, { onDelete: "cascade" }),
-    payload: text().notNull(),
-    /** pending | delivered | failed */
-    status: text().notNull(),
-    attempts: integer().notNull().default(0),
-    nextAttemptAt: timestamp({ withTimezone: true }),
-    responseStatus: integer(),
-    lastError: text(),
-    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
-    deliveredAt: timestamp({ withTimezone: true }),
-  },
-  (t) => [index().on(t.appId, t.createdAt), index().on(t.status)]
 )
