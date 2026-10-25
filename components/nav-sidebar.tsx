@@ -17,7 +17,7 @@ import {
 import { UserButton } from "@clerk/nextjs"
 import type { apps as appsTable } from "@/lib/schema"
 import Link from "next/link"
-import { HouseHeart, Key, ShoppingBag, Webhook } from "lucide-react"
+import { HouseHeart, Key, ShoppingBag, Wallet, Webhook } from "lucide-react"
 import { useParams } from "next/navigation"
 
 export function NavSidebar({
@@ -51,6 +51,15 @@ export function NavSidebar({
                   <Link href={`/dashboard/${appId}/products`}>
                     <ShoppingBag />
                     <span>Products</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="Withdraw">
+                  <Link href={`/dashboard/${appId}/withdraw`}>
+                    <Wallet />
+                    <span>Withdraw</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

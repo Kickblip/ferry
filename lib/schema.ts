@@ -151,14 +151,12 @@ export const webhookDeliveries = pgTable(
   (t) => [uniqueIndex().on(t.paymentId), index().on(t.appId, t.createdAt)]
 )
 
-/** The developer's share of a payment, paid platform → developer in Nessie. */
+/** App earnings withdrawn from Ferry; paymentId links historical per-payment payouts. */
 export const payouts = pgTable(
   "payouts",
   {
     id: uuid().defaultRandom().primaryKey(),
-    paymentId: uuid()
-      .notNull()
-      .references(() => payments.id, { onDelete: "restrict" }),
+    paymentId: uuid().references(() => payments.id, { onDelete: "restrict" }),
     appId: uuid()
       .notNull()
       .references(() => apps.id, { onDelete: "restrict" }),

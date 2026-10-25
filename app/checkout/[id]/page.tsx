@@ -11,6 +11,16 @@ import { MailIcon, CreditCardIcon } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import type { checkoutView } from "@/lib/payments/views"
 
 type Checkout = ReturnType<typeof checkoutView>
@@ -57,6 +67,7 @@ function CheckoutForm({ id }: { id: string }) {
   const [checkout, setCheckout] = useState<Checkout | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [applePayOpen, setApplePayOpen] = useState(false)
   const busy = useRef(false)
   const endpoint = `/api/checkout/${encodeURIComponent(id)}`
 
@@ -140,6 +151,67 @@ function CheckoutForm({ id }: { id: string }) {
 
         {ready && (
           <>
+            <Dialog open={applePayOpen} onOpenChange={setApplePayOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  className="w-full bg-black text-base text-white hover:bg-black/90"
+                  disabled={pending}
+                >
+                  Apple Pay
+                  <span className="rounded border border-white/30 px-1.5 py-0.5 text-xs font-normal">
+                    Demo
+                  </span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-sm">
+                <DialogHeader>
+                  <DialogTitle>Apple Pay demo</DialogTitle>
+                  <DialogDescription>
+                    Confirm this simulated wallet payment. No real card is
+                    charged.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex items-center gap-3 rounded-md border bg-secondary p-4">
+                  <CreditCardIcon className="size-6" aria-hidden="true" />
+                  <div>
+                    <p className="font-medium">Demo card</p>
+                    <p className="text-xs text-muted-foreground">•••• 4242</p>
+                  </div>
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-medium">{checkout.description}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {checkout.merchant.name}
+                    </p>
+                  </div>
+                  <p className="font-semibold whitespace-nowrap">{amount}</p>
+                </div>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline">
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      setApplePayOpen(false)
+                      void pay()
+                    }}
+                  >
+                    Confirm {amount}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="h-px flex-1 bg-border" />
+              <span>Or use the demo card below</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
             <div className="flex flex-col gap-2">
               <p className="text-sm font-medium">Shipping Information</p>
               <Label

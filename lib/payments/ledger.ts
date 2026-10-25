@@ -1,4 +1,5 @@
 import type { NessieClient, NessieTxn } from "@/lib/payments/nessie/client"
+import type { Movement } from "@/lib/payments/types"
 
 /** Transactions are tagged "<ref> <note>" so they can be found again: Nessie's create calls return no id. */
 const describe = (ref: string, note: string) => `${ref} ${note}`
@@ -48,4 +49,54 @@ export async function balanceCents(
   const sum = (txns: NessieTxn[]) =>
     txns.filter(counts).reduce((total, t) => total + t.amount, 0)
   return account.balance + sum(deposits) - sum(withdrawals)
+}
+
+/** The payout row is locked by the caller; each leg reuses its tagged transaction on retry. */
+export async function settleTransfer(nessie: NessieClient, movement: Movement) {
+  const { ref, fromAccountId, toAccountId, amountCents } = movement
+  if (
+    !Number.isSafeInteger(amountCents) ||
+    amountCents <= 0 ||
+    fromAccountId === toAccountId
+  ) {
+    throw new Error("Invalid withdrawal")
+  }
+
+  let withdrawal = findByRef(await nessie.listWithdrawals(fromAccountId), ref)
+  if (!withdrawal) {
+    if ((await balanceCents(nessie, fromAccountId)) < amountCents) {
+      throw new Error("Ferry has insufficient settled funds")
+    }
+    // shortcut: invisible timed-out writes can duplicate; strict recovery needs Nessie idempotency.
+    await nessie.createWithdrawal(fromAccountId, {
+      amount: amountCents,
+      description: describe(ref, "App withdrawal"),
+    })
+    withdrawal = findByRef(await nessie.listWithdrawals(fromAccountId), ref)
+  }
+  if (
+    !withdrawal?._id ||
+    withdrawal.status !== "completed" ||
+    withdrawal.amount !== amountCents
+  ) {
+    throw new Error("Nessie withdrawal is awaiting confirmation")
+  }
+  movement.withdrawal = { status: "COMPLETED", nessieId: withdrawal._id }
+
+  let deposit = findByRef(await nessie.listDeposits(toAccountId), ref)
+  if (!deposit) {
+    await nessie.createDeposit(toAccountId, {
+      amount: amountCents,
+      description: describe(ref, "App withdrawal"),
+    })
+    deposit = findByRef(await nessie.listDeposits(toAccountId), ref)
+  }
+  if (
+    !deposit?._id ||
+    deposit.status !== "completed" ||
+    deposit.amount !== amountCents
+  ) {
+    throw new Error("Nessie deposit is awaiting confirmation")
+  }
+  movement.deposit = { status: "COMPLETED", nessieId: deposit._id }
 }
